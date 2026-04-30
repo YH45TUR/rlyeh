@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # SSH Honeypot
+  rlyeh-ssh:
+    build:
+      context: ./docker/ssh-honeypot
+      dockerfile: Dockerfile
+    container_name: rlyeh-ssh
+    ports:
+      - "2222:2222"
+    networks:
+      - rlyeh-internal
+    volumes:
+      - ./logs:/var/log/rlyeh
+      - ./data:/data
+    environment:
+      - HONEYPOT_LOG_DIR=/var/log/rlyeh
+      - HONEYPOT_BIND_HOST=0.0.0.0
+      - HONEYPOT_BIND_PORT=2222
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Web Honeypot
+  rlyeh-web:
+    build:
+      context: ./docker/web-honeypot
+      dockerfile: Dockerfile
+    container_name: rlyeh-web
+    ports:
+      - "8080:8080"
+    networks:
+      - rlyeh-internal
+    volumes:
+      - ./logs:/var/log/rlyeh
+    environment:
+      - HONEYPOT_LOG_DIR=/var/log/rlyeh
+      - FLASK_ENV=production
+      - FLASK_PORT=8080
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Elasticsearch - Storage
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: rlyeh-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - rlyeh-internal
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  # R'lyeh API Server
+  rlyeh-api:
+    build:
+      context: ./docker/api
+      dockerfile: Dockerfile
+    container_name: rlyeh-api
+    ports:
+      - "8000:8000"
+    networks:
+      - rlyeh-internal
+    volumes:
+      - ./logs:/var/log/rlyeh
+      - ./src:/app/src
+    environment:
+      - RLYEH_LOG_DIR=/var/log/rlyeh
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - SECURITY_ENFORCER_URL=http://security-enforcer:8080
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+      - rlyeh-ssh
+      - rlyeh-web
+
+  # Kibana - Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: rlyeh-kibana
+    ports:
+      - "5601:5601"
+    networks:
+      - rlyeh-internal
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+
+networks:
+  rlyeh-internal:
+    driver: bridge
+    internal: false
+
+volumes:
+  elasticsearch-data:
+    driver: local

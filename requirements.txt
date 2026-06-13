@@ -1,0 +1,6 @@
+# Runtime dependencies
+flask>=2.3.0,<4.0
+
+# Development / testing (also used by GitHub Actions CI)
+pytest>=7.4
+pytest-cov>=4.1
